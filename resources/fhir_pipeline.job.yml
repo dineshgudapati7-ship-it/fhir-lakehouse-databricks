@@ -2,10 +2,73 @@ resources:
   jobs:
     fhir_pipeline:
       name: fhir_pipeline
+      max_concurrent_runs: 1
       parameters:
         - name: catalog
           default: fhir
+        - name: start_date        # YYYY-MM-DD; blank = incremental from ops.watermark
+          default: ""
+        - name: end_date          # exclusive; blank = start_date + 1 day (or now when incremental)
+          default: ""
+        - name: format            # json | xml; blank = config default
+          default: ""
+        - name: run_id
+          default: "{{job.run_id}}"
       tasks:
         - task_key: setup
           notebook_task:
             notebook_path: ../notebooks/00_setup.py
+
+        # Ingestion runs in the required order Patient -> Encounter -> Observation -> Condition.
+        - task_key: ingest_patient
+          depends_on: [{task_key: setup}]
+          max_retries: 1
+          notebook_task:
+            notebook_path: ../notebooks/01_ingest_raw.py
+            base_parameters: {resource: Patient}
+
+        - task_key: ingest_encounter
+          depends_on: [{task_key: ingest_patient}]
+          max_retries: 1
+          notebook_task:
+            notebook_path: ../notebooks/01_ingest_raw.py
+            base_parameters: {resource: Encounter}
+
+        - task_key: ingest_observation
+          depends_on: [{task_key: ingest_encounter}]
+          max_retries: 1
+          notebook_task:
+            notebook_path: ../notebooks/01_ingest_raw.py
+            base_parameters: {resource: Observation}
+
+        - task_key: ingest_condition
+          depends_on: [{task_key: ingest_observation}]
+          max_retries: 1
+          notebook_task:
+            notebook_path: ../notebooks/01_ingest_raw.py
+            base_parameters: {resource: Condition}
+
+        # Bronze for each resource starts as soon as its own ingest finishes.
+        - task_key: bronze_patient
+          depends_on: [{task_key: ingest_patient}]
+          notebook_task:
+            notebook_path: ../notebooks/02_raw_to_bronze.py
+            base_parameters: {resource: Patient}
+
+        - task_key: bronze_encounter
+          depends_on: [{task_key: ingest_encounter}]
+          notebook_task:
+            notebook_path: ../notebooks/02_raw_to_bronze.py
+            base_parameters: {resource: Encounter}
+
+        - task_key: bronze_observation
+          depends_on: [{task_key: ingest_observation}]
+          notebook_task:
+            notebook_path: ../notebooks/02_raw_to_bronze.py
+            base_parameters: {resource: Observation}
+
+        - task_key: bronze_condition
+          depends_on: [{task_key: ingest_condition}]
+          notebook_task:
+            notebook_path: ../notebooks/02_raw_to_bronze.py
+            base_parameters: {resource: Condition}

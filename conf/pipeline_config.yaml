@@ -10,7 +10,7 @@ api:
 
 storage:
   catalog: fhir
-  raw_volume_path: /Volumes/fhir/raw/landing
+  raw_volume_path: /Volumes/{catalog}/raw/landing   # {catalog} is filled in at runtime
 
 resources:                   # order matters for orchestration
   - name: Patient
