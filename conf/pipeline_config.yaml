@@ -1,0 +1,23 @@
+api:
+  base_url: https://hapi.fhir.org/baseR4
+  page_size: 100
+  max_pages_per_window: 50   # HAPI public server is huge; cap pages per date window
+  timeout_seconds: 60
+  max_retries: 5
+  backoff_factor: 2
+  default_format: json       # json | xml
+  watermark_overlap_minutes: 10
+
+storage:
+  catalog: fhir
+  raw_volume_path: /Volumes/fhir/raw/landing
+
+resources:                   # order matters for orchestration
+  - name: Patient
+    business_key: id
+  - name: Encounter
+    business_key: id
+  - name: Observation
+    business_key: id
+  - name: Condition
+    business_key: id

@@ -1,0 +1,11 @@
+resources:
+  jobs:
+    fhir_pipeline:
+      name: fhir_pipeline
+      parameters:
+        - name: catalog
+          default: fhir
+      tasks:
+        - task_key: setup
+          notebook_task:
+            notebook_path: ../notebooks/00_setup.py
