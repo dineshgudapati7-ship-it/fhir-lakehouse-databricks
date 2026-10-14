@@ -13,14 +13,23 @@
 
 # COMMAND ----------
 
-import os
-import sys
+# MAGIC %run ./lib/config
 
-sys.path.append(os.path.abspath(os.path.join(os.getcwd(), "..", "src")))
+# COMMAND ----------
+
+# MAGIC %run ./lib/api_client
+
+# COMMAND ----------
+
+# MAGIC %run ./lib/audit
+
+# COMMAND ----------
+
+# MAGIC %run ./lib/raw_writer
+
+# COMMAND ----------
 
 from datetime import datetime, timedelta, timezone
-
-from fhir_lib import api_client, audit, config, raw_writer
 
 # COMMAND ----------
 
@@ -31,11 +40,11 @@ dbutils.widgets.text("end_date", "")
 dbutils.widgets.text("format", "")
 dbutils.widgets.text("run_id", "")
 
-cfg = config.load_config(catalog=dbutils.widgets.get("catalog").strip() or None)
+cfg = load_config(catalog=dbutils.widgets.get("catalog").strip() or None)
 catalog = cfg["storage"]["catalog"]
 api_cfg = cfg["api"]
-resource = config.get_resource(cfg, dbutils.widgets.get("resource").strip())["name"]
-fmt = config.resolve_format(cfg, dbutils.widgets.get("format").strip() or None)
+resource = get_resource(cfg, dbutils.widgets.get("resource").strip())["name"]
+fmt = resolve_format(cfg, dbutils.widgets.get("format").strip() or None)
 run_id = dbutils.widgets.get("run_id").strip() or f"manual_{datetime.now(timezone.utc):%Y%m%dT%H%M%S}"
 
 
@@ -49,7 +58,7 @@ if start_raw.strip():
     window_start = parse_ts(start_raw)
     window_end = parse_ts(end_raw) if end_raw.strip() else window_start + timedelta(days=1)
 else:
-    watermark = audit.read_watermark(spark, catalog, resource)
+    watermark = read_watermark(spark, catalog, resource)
     if watermark is None:
         raise ValueError(f"No watermark for {resource}; pass start_date for the initial load.")
     if watermark.tzinfo is None:
@@ -67,21 +76,21 @@ print(f"run_id={run_id} resource={resource} format={fmt} window=[{window_start},
 
 # COMMAND ----------
 
-params = api_client.build_search_params(window_start, window_end, api_cfg["page_size"], fmt)
-session = api_client.build_session(api_cfg)
+params = build_search_params(window_start, window_end, api_cfg["page_size"], fmt)
+session = build_session(api_cfg)
 
 log_rows, raw_files = [], []
 total_entries, max_last_updated, last_page = 0, None, None
 
 try:
-    for page in api_client.fetch_pages(session, api_cfg["base_url"], resource, params, fmt,
-                                       api_cfg["max_pages_per_window"], api_cfg["timeout_seconds"]):
-        path = raw_writer.raw_file_path(cfg["storage"]["raw_volume_path"], resource, fmt,
-                                        load_date, run_id, page.page_number)
-        raw_writer.write_raw(path, page.text)
-        log_rows.append(audit.call_log_row(run_id, resource, params if page.page_number == 1 else None,
-                                           page=page, raw_file_path=path,
-                                           file_saved_at=datetime.now(timezone.utc)))
+    for page in fetch_pages(session, api_cfg["base_url"], resource, params, fmt,
+                            api_cfg["max_pages_per_window"], api_cfg["timeout_seconds"]):
+        path = raw_file_path(cfg["storage"]["raw_volume_path"], resource, fmt,
+                             load_date, run_id, page.page_number)
+        write_raw(path, page.text)
+        log_rows.append(call_log_row(run_id, resource, params if page.page_number == 1 else None,
+                                     page=page, raw_file_path=path,
+                                     file_saved_at=datetime.now(timezone.utc)))
         raw_files.append(path)
         total_entries += page.entries
         if page.max_last_updated and (max_last_updated is None or page.max_last_updated > max_last_updated):
@@ -92,12 +101,12 @@ try:
         # Hit max_pages_per_window with more data available: flag it rather than failing.
         log_rows[-1]["status"] = "TRUNCATED"
         print(f"WARNING: stopped at max_pages_per_window={api_cfg['max_pages_per_window']}; more pages exist.")
-except api_client.FhirFetchError as e:
-    log_rows.append(audit.call_log_row(run_id, resource, params if e.page_number == 1 else None,
-                                       status="FAILED", error=e))
+except FhirFetchError as e:
+    log_rows.append(call_log_row(run_id, resource, params if e.page_number == 1 else None,
+                                 status="FAILED", error=e))
     raise
 finally:
-    audit.write_call_log(spark, catalog, log_rows)
+    write_call_log(spark, catalog, log_rows)
 
 print(f"pages={len(raw_files)} entries={total_entries} max_last_updated={max_last_updated}")
 

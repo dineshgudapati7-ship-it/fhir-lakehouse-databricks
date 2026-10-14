@@ -1,4 +1,12 @@
-"""HAPI FHIR search client: retrying session, _lastUpdated windows and Bundle pagination."""
+# Databricks notebook source
+# MAGIC %md
+# MAGIC ## lib/api_client
+# MAGIC HAPI FHIR search client: retrying session, _lastUpdated windows and Bundle pagination.
+# MAGIC
+# MAGIC Shared helper notebook: include it with `%run ./lib/api_client`.
+
+# COMMAND ----------
+
 import json
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass

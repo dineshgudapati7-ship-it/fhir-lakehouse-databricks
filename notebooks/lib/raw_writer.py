@@ -1,4 +1,12 @@
-"""Write API responses to the raw UC Volume exactly as received."""
+# Databricks notebook source
+# MAGIC %md
+# MAGIC ## lib/raw_writer
+# MAGIC Write API responses to the raw UC Volume exactly as received.
+# MAGIC
+# MAGIC Shared helper notebook: include it with `%run ./lib/raw_writer`.
+
+# COMMAND ----------
+
 import os
 
 

@@ -72,3 +72,28 @@ resources:
           notebook_task:
             notebook_path: ../notebooks/02_raw_to_bronze.py
             base_parameters: {resource: Condition}
+
+        # Silver (SCD2) for each resource after its Bronze load.
+        - task_key: silver_patient
+          depends_on: [{task_key: bronze_patient}]
+          notebook_task:
+            notebook_path: ../notebooks/03_bronze_to_silver.py
+            base_parameters: {resource: Patient}
+
+        - task_key: silver_encounter
+          depends_on: [{task_key: bronze_encounter}]
+          notebook_task:
+            notebook_path: ../notebooks/03_bronze_to_silver.py
+            base_parameters: {resource: Encounter}
+
+        - task_key: silver_observation
+          depends_on: [{task_key: bronze_observation}]
+          notebook_task:
+            notebook_path: ../notebooks/03_bronze_to_silver.py
+            base_parameters: {resource: Observation}
+
+        - task_key: silver_condition
+          depends_on: [{task_key: bronze_condition}]
+          notebook_task:
+            notebook_path: ../notebooks/03_bronze_to_silver.py
+            base_parameters: {resource: Condition}

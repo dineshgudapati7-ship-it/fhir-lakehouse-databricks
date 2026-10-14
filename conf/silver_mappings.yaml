@@ -1,0 +1,80 @@
+# Bronze -> Silver column mappings, one block per FHIR resource.
+#
+#   <silver_column>: {expr: <Spark SQL expression over bronze columns>, type: <type>, rule: <rule>}
+#
+# expr   Bronze keeps the FHIR structure, so paths are plain Spark SQL. Use get(array, 0) for the
+#        first element: it returns NULL instead of failing when the array is empty.
+#        A path that doesn't exist in a batch (field never sent) becomes NULL.
+# type   string (default) | lower | upper | date | timestamp | double | int | boolean
+#        reference: "Patient/123" -> "123"
+# rule   not_future: NULL out dates/timestamps later than today
+#
+# `key` is the business key; it must be one of the columns. Every silver table also gets
+# source_version_id, source_last_updated, record_hash, SCD2 columns and _-prefixed lineage columns.
+
+Patient:
+  key: patient_id
+  columns:
+    patient_id:        {expr: id}
+    active:            {expr: active, type: boolean}
+    gender:            {expr: gender, type: lower}
+    birth_date:        {expr: birthDate, type: date, rule: not_future}
+    family_name:       {expr: get(name, 0).family}
+    given_name:        {expr: get(get(name, 0).given, 0)}
+    phone:             {expr: get(telecom, 0).value}
+    address_line:      {expr: get(get(address, 0).line, 0)}
+    city:              {expr: get(address, 0).city}
+    state:             {expr: get(address, 0).state}
+    postal_code:       {expr: get(address, 0).postalCode}
+    country:           {expr: get(address, 0).country}
+    marital_status:    {expr: get(maritalStatus.coding, 0).code, type: upper}
+    deceased_flag:     {expr: deceasedBoolean, type: boolean}
+    deceased_datetime: {expr: deceasedDateTime, type: timestamp, rule: not_future}
+
+Encounter:
+  key: encounter_id
+  columns:
+    encounter_id:      {expr: id}
+    patient_ref:       {expr: subject.reference}
+    patient_id:        {expr: subject.reference, type: reference}
+    status:            {expr: status, type: lower}
+    class_code:        {expr: '`class`.code', type: upper}
+    type_code:         {expr: get(get(type, 0).coding, 0).code}
+    type_display:      {expr: get(get(type, 0).coding, 0).display}
+    period_start:      {expr: period.start, type: timestamp}
+    period_end:        {expr: period.end, type: timestamp}
+    service_provider:  {expr: serviceProvider.reference, type: reference}
+
+Observation:
+  key: observation_id
+  columns:
+    observation_id:    {expr: id}
+    patient_ref:       {expr: subject.reference}
+    patient_id:        {expr: subject.reference, type: reference}
+    encounter_id:      {expr: encounter.reference, type: reference}
+    status:            {expr: status, type: lower}
+    category:          {expr: get(get(category, 0).coding, 0).code, type: lower}
+    code:              {expr: get(code.coding, 0).code}            # usually LOINC
+    code_system:       {expr: get(code.coding, 0).system}
+    code_display:      {expr: get(code.coding, 0).display}
+    effective_datetime: {expr: effectiveDateTime, type: timestamp, rule: not_future}
+    value_quantity:    {expr: valueQuantity.value, type: double}
+    value_unit:        {expr: valueQuantity.unit}
+    value_string:      {expr: valueString}
+    value_code:        {expr: get(valueCodeableConcept.coding, 0).code}
+
+Condition:
+  key: condition_id
+  columns:
+    condition_id:        {expr: id}
+    patient_ref:         {expr: subject.reference}
+    patient_id:          {expr: subject.reference, type: reference}
+    encounter_id:        {expr: encounter.reference, type: reference}
+    clinical_status:     {expr: get(clinicalStatus.coding, 0).code, type: lower}
+    verification_status: {expr: get(verificationStatus.coding, 0).code, type: lower}
+    category:            {expr: get(get(category, 0).coding, 0).code, type: lower}
+    code:                {expr: get(code.coding, 0).code}
+    code_system:         {expr: get(code.coding, 0).system}
+    code_display:        {expr: get(code.coding, 0).display}
+    onset_datetime:      {expr: onsetDateTime, type: timestamp, rule: not_future}
+    recorded_date:       {expr: recordedDate, type: date, rule: not_future}

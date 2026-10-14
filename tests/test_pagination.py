@@ -6,9 +6,9 @@ from datetime import datetime, timezone
 import pytest
 import requests
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "notebooks", "lib"))
 
-from fhir_lib import api_client, audit, config, raw_writer  # noqa: E402
+import api_client, audit, config, raw_writer  # noqa: E402,E401
 
 BASE = "https://example.org/fhir"
 

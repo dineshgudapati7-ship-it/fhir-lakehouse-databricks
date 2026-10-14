@@ -1,9 +1,22 @@
-"""Load pipeline config from conf/pipeline_config.yaml and apply runtime overrides."""
+# Databricks notebook source
+# MAGIC %md
+# MAGIC ## lib/config
+# MAGIC Load pipeline config from conf/pipeline_config.yaml and apply runtime overrides.
+# MAGIC
+# MAGIC Shared helper notebook: include it with `%run ./lib/config`.
+
+# COMMAND ----------
+
 from pathlib import Path
 
 import yaml
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+try:
+    REPO_ROOT = Path(__file__).resolve().parents[2]   # imported as a module (local tests)
+except NameError:
+    # Pulled in with %run: __file__ isn't defined, and the working directory is the calling
+    # notebook's folder (notebooks/), so the repo root is one level up.
+    REPO_ROOT = Path.cwd().parent
 DEFAULT_CONFIG_PATH = REPO_ROOT / "conf" / "pipeline_config.yaml"
 
 SUPPORTED_FORMATS = ("json", "xml")

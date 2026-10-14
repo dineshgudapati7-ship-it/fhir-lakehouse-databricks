@@ -1,4 +1,12 @@
-"""Ops/audit table helpers: API call log and watermarks."""
+# Databricks notebook source
+# MAGIC %md
+# MAGIC ## lib/audit
+# MAGIC Ops/audit table helpers: API call log and watermarks.
+# MAGIC
+# MAGIC Shared helper notebook: include it with `%run ./lib/audit`.
+
+# COMMAND ----------
+
 import json
 
 API_CALL_LOG_SCHEMA = """
@@ -44,3 +52,19 @@ def read_watermark(spark, catalog, resource):
            .select("last_max_lastupdated")
            .first())
     return row[0] if row else None
+
+
+LOAD_CHANGE_SUMMARY_SCHEMA = """
+    run_id STRING, load_date DATE, resource STRING, records_in_batch BIGINT, new_records BIGINT,
+    changed_records BIGINT, unchanged_records BIGINT, closed_versions BIGINT
+"""
+
+
+def write_change_summary(spark, catalog, run_id, load_date, resource, counts):
+    """One row per run and resource; rerunning a run_id replaces its row."""
+    table = f"{catalog}.ops.load_change_summary"
+    spark.sql(f"DELETE FROM {table} WHERE run_id = '{run_id}' AND resource = '{resource}'")
+    row = {"run_id": run_id, "load_date": load_date, "resource": resource,
+           **{k: counts[k] for k in ("records_in_batch", "new_records", "changed_records",
+                                     "unchanged_records", "closed_versions")}}
+    spark.createDataFrame([row], LOAD_CHANGE_SUMMARY_SCHEMA).write.mode("append").saveAsTable(table)
