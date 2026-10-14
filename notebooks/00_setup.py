@@ -2,11 +2,21 @@
 # MAGIC %md
 # MAGIC # 00 - Setup
 # MAGIC Idempotent: creates the catalog schemas, the raw landing volume and the ops (audit) tables.
-# MAGIC Safe to rerun; also runs as the first task of the pipeline job.
+# MAGIC Safe to rerun; also runs as the first task of the pipeline job, where it records the run as
+# MAGIC RUNNING in `ops.pipeline_run` (closed by the `finalize` / `mark_failed` tasks).
+
+# COMMAND ----------
+
+# MAGIC %run ./lib/audit
 
 # COMMAND ----------
 
 dbutils.widgets.text("catalog", "fhir")
+dbutils.widgets.text("run_id", "")
+dbutils.widgets.text("job_run_id", "")
+dbutils.widgets.text("start_date", "")
+dbutils.widgets.text("end_date", "")
+dbutils.widgets.text("format", "")
 catalog = dbutils.widgets.get("catalog")
 
 # COMMAND ----------
@@ -78,3 +88,11 @@ for name, cols in ops_tables.items():
 
 display(spark.sql(f"SHOW TABLES IN {catalog}.ops"))
 display(spark.sql(f"SHOW VOLUMES IN {catalog}.raw"))
+
+# COMMAND ----------
+
+run_id = dbutils.widgets.get("run_id").strip()
+if run_id:   # only inside a job run; interactive setup runs aren't pipeline runs
+    params = {k: dbutils.widgets.get(k) for k in ("catalog", "start_date", "end_date", "format")}
+    start_pipeline_run(spark, catalog, run_id, dbutils.widgets.get("job_run_id").strip() or run_id, params)
+    print(f"pipeline run {run_id} started with {params}")

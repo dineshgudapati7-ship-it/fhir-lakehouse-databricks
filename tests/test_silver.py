@@ -29,6 +29,14 @@ def test_clean_sql_types_and_rules():
     assert silver.clean_sql("gender", "lower") == "lower(nullif(trim(cast((gender) AS STRING)), ''))"
     assert "try_cast" in silver.clean_sql("birthDate", "date")
     assert "regexp_extract" in silver.clean_sql("subject.reference", "reference")
-    sql = silver.clean_sql("birthDate", "date", "not_future")
-    assert sql.startswith("CASE WHEN") and "current_date()" in sql
-    assert "current_timestamp()" in silver.clean_sql("onsetDateTime", "timestamp", "not_future")
+    sql = silver.clean_sql("birthDate", "date", "plausible_date")
+    assert sql.startswith("CASE WHEN") and "current_date()" in sql and "1900-01-01" in sql
+    assert "current_timestamp()" in silver.clean_sql("onsetDateTime", "timestamp", "plausible_date")
+
+
+def test_unquoted_comma_in_expr_is_rejected(tmp_path):
+    bad = tmp_path / "m.yaml"
+    bad.write_text("Patient:\n  key: patient_id\n  columns:\n    patient_id: {expr: id}\n"
+                   "    family_name: {expr: get(name, 0).family}\n")
+    with pytest.raises(ValueError, match="quote the expr"):
+        silver.load_silver_mapping("Patient", bad)

@@ -1,7 +1,7 @@
 # Databricks notebook source
 # MAGIC %md
 # MAGIC ## lib/audit
-# MAGIC Ops/audit table helpers: API call log and watermarks.
+# MAGIC Ops/audit table helpers: API call log, pipeline runs, watermarks and change summaries.
 # MAGIC
 # MAGIC Shared helper notebook: include it with `%run ./lib/audit`.
 
@@ -68,3 +68,40 @@ def write_change_summary(spark, catalog, run_id, load_date, resource, counts):
            **{k: counts[k] for k in ("records_in_batch", "new_records", "changed_records",
                                      "unchanged_records", "closed_versions")}}
     spark.createDataFrame([row], LOAD_CHANGE_SUMMARY_SCHEMA).write.mode("append").saveAsTable(table)
+
+
+def start_pipeline_run(spark, catalog, run_id, job_run_id, params):
+    """Record the run as RUNNING (a repaired/re-run job run_id is reset to RUNNING)."""
+    spark.sql(f"""
+        MERGE INTO {catalog}.ops.pipeline_run t
+        USING (SELECT :run_id AS run_id, :job_run_id AS job_run_id, :params AS params) s
+        ON t.run_id = s.run_id
+        WHEN MATCHED THEN UPDATE SET job_run_id = s.job_run_id, started_at = current_timestamp(),
+                                     ended_at = NULL, status = 'RUNNING', params = s.params
+        WHEN NOT MATCHED THEN INSERT (run_id, job_run_id, started_at, ended_at, status, params)
+                              VALUES (s.run_id, s.job_run_id, current_timestamp(), NULL, 'RUNNING', s.params)
+    """, args={"run_id": run_id, "job_run_id": job_run_id, "params": json.dumps(params)})
+
+
+def finish_pipeline_run(spark, catalog, run_id, status):
+    spark.sql(f"""
+        UPDATE {catalog}.ops.pipeline_run SET ended_at = current_timestamp(), status = :status
+        WHERE run_id = :run_id
+    """, args={"run_id": run_id, "status": status})
+
+
+def update_watermark(spark, catalog, resource, max_last_updated, run_id):
+    """Advance the watermark to max_last_updated; never moves it backwards (e.g. an older backfill)."""
+    if max_last_updated is None:
+        return
+    spark.sql(f"""
+        MERGE INTO {catalog}.ops.watermark t
+        USING (SELECT :resource AS resource, CAST(:ts AS TIMESTAMP) AS ts, :run_id AS run_id) s
+        ON t.resource = s.resource
+        WHEN MATCHED AND s.ts > t.last_max_lastupdated THEN
+            UPDATE SET last_max_lastupdated = s.ts, last_successful_run_id = s.run_id,
+                       updated_at = current_timestamp()
+        WHEN NOT MATCHED THEN
+            INSERT (resource, last_max_lastupdated, last_successful_run_id, updated_at)
+            VALUES (s.resource, s.ts, s.run_id, current_timestamp())
+    """, args={"resource": resource, "ts": str(max_last_updated), "run_id": run_id})

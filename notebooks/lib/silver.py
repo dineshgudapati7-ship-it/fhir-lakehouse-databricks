@@ -19,7 +19,8 @@ except NameError:   # pulled in with %run from notebooks/
     SILVER_MAPPINGS_PATH = Path.cwd().parent / "conf" / "silver_mappings.yaml"
 
 SILVER_TYPES = {"string", "lower", "upper", "date", "timestamp", "double", "int", "boolean", "reference"}
-SILVER_RULES = {"not_future"}
+SILVER_RULES = {"plausible_date"}
+SPEC_KEYS = {"expr", "type", "rule"}
 LINEAGE_COLUMNS = ["_run_id", "_extracted_at", "_load_date"]
 
 
@@ -37,8 +38,15 @@ def load_silver_mapping(resource, path=None):
     if mapping.get("key") not in columns:
         raise ValueError(f"{resource}: key '{mapping.get('key')}' must be one of its columns")
     for name, spec in columns.items():
-        if "expr" not in spec:
+        if not isinstance(spec, dict) or not isinstance(spec.get("expr"), str):
             raise ValueError(f"{resource}.{name}: missing expr")
+        # Catches unquoted commas in YAML flow maps, e.g. {expr: get(name, 0).family} parses as
+        # {"expr": "get(name", "0).family": None}.
+        if set(spec) - SPEC_KEYS:
+            raise ValueError(f"{resource}.{name}: unexpected keys {sorted(set(spec) - SPEC_KEYS)} "
+                             "(quote the expr if it contains a comma)")
+        if spec["expr"].count("(") != spec["expr"].count(")"):
+            raise ValueError(f"{resource}.{name}: unbalanced parentheses in expr '{spec['expr']}'")
         if spec.get("type", "string") not in SILVER_TYPES:
             raise ValueError(f"{resource}.{name}: unknown type '{spec['type']}'")
         if spec.get("rule") and spec["rule"] not in SILVER_RULES:
@@ -60,9 +68,9 @@ def clean_sql(expr, type_="string", rule=None):
         "boolean": f"try_cast({base} AS BOOLEAN)",
         "reference": f"nullif(regexp_extract({base}, '([^/]+)$', 1), '')",
     }[type_]
-    if rule == "not_future":
-        limit = "current_date()" if type_ == "date" else "current_timestamp()"
-        sql = f"CASE WHEN {sql} > {limit} THEN NULL ELSE {sql} END"
+    if rule == "plausible_date":
+        upper = "current_date()" if type_ == "date" else "current_timestamp()"
+        sql = f"CASE WHEN {sql} > {upper} OR {sql} < DATE'1900-01-01' THEN NULL ELSE {sql} END"
     return sql
 
 

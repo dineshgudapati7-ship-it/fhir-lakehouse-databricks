@@ -21,3 +21,14 @@ resources:                   # order matters for orchestration
     business_key: id
   - name: Condition
     business_key: id
+
+data_quality:
+  # Share of current Silver rows allowed to be NULL. These describe the source data (the public
+  # HAPI server holds a lot of incomplete test data), so breaches are WARN and don't fail the run.
+  max_null_rate:
+    Patient:     {family_name: 0.3, gender: 0.5, birth_date: 0.5}
+    Encounter:   {patient_id: 0.05, status: 0.0, period_start: 0.1}
+    Observation: {patient_id: 0.05, code: 0.05, effective_datetime: 0.1}
+    Condition:   {patient_id: 0.05, code: 0.05, clinical_status: 0.05}
+  # Share of Gold facts linked to the Unknown patient (reference to a patient never loaded). WARN.
+  max_unknown_patient_rate: 0.1

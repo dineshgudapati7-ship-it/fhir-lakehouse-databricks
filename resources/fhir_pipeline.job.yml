@@ -2,7 +2,18 @@ resources:
   jobs:
     fhir_pipeline:
       name: fhir_pipeline
-      max_concurrent_runs: 1
+      max_concurrent_runs: 1     # SCD2 history depends on load order: never run two loads at once
+      timeout_seconds: 3600
+      email_notifications:
+        on_failure: ["${workspace.current_user.userName}"]
+
+      # Daily incremental load (blank start_date -> from ops.watermark). Paused until the initial
+      # backfill has set the watermarks; unpause in the Jobs UI or here.
+      schedule:
+        quartz_cron_expression: "0 0 6 * * ?"
+        timezone_id: UTC
+        pause_status: PAUSED
+
       parameters:
         - name: catalog
           default: fhir
@@ -14,10 +25,13 @@ resources:
           default: ""
         - name: run_id
           default: "{{job.run_id}}"
+
       tasks:
+        # Creates schemas/tables if missing and records the run as RUNNING in ops.pipeline_run.
         - task_key: setup
           notebook_task:
             notebook_path: ../notebooks/00_setup.py
+            base_parameters: {job_run_id: "{{job.run_id}}"}
 
         # Ingestion runs in the required order Patient -> Encounter -> Observation -> Condition.
         - task_key: ingest_patient
@@ -97,3 +111,49 @@ resources:
           notebook_task:
             notebook_path: ../notebooks/03_bronze_to_silver.py
             base_parameters: {resource: Condition}
+
+        - task_key: gold
+          depends_on:
+            - {task_key: silver_patient}
+            - {task_key: silver_encounter}
+            - {task_key: silver_observation}
+            - {task_key: silver_condition}
+          notebook_task:
+            notebook_path: ../notebooks/04_gold.py
+
+        - task_key: data_quality
+          depends_on: [{task_key: gold}]
+          notebook_task:
+            notebook_path: ../notebooks/05_data_quality.py
+
+        # Only after everything (including DQ) succeeded: advance watermarks, mark run SUCCEEDED.
+        - task_key: finalize
+          depends_on: [{task_key: data_quality}]
+          notebook_task:
+            notebook_path: ../notebooks/06_finalize.py
+            base_parameters: {outcome: success}
+
+        # If any task failed: mark the run FAILED. Depends on every task so a failure anywhere is seen
+        # directly; on a fully successful run it is skipped (Excluded).
+        - task_key: mark_failed
+          run_if: AT_LEAST_ONE_FAILED
+          depends_on:
+            - {task_key: setup}
+            - {task_key: ingest_patient}
+            - {task_key: ingest_encounter}
+            - {task_key: ingest_observation}
+            - {task_key: ingest_condition}
+            - {task_key: bronze_patient}
+            - {task_key: bronze_encounter}
+            - {task_key: bronze_observation}
+            - {task_key: bronze_condition}
+            - {task_key: silver_patient}
+            - {task_key: silver_encounter}
+            - {task_key: silver_observation}
+            - {task_key: silver_condition}
+            - {task_key: gold}
+            - {task_key: data_quality}
+            - {task_key: finalize}
+          notebook_task:
+            notebook_path: ../notebooks/06_finalize.py
+            base_parameters: {outcome: failed}

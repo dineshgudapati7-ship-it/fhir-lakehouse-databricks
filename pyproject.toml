@@ -11,6 +11,10 @@ dev = [
     "requests>=2.32.5",
 ]
 
+[tool.pytest.ini_options]
+# notebooks/tests run inside Databricks (they need spark/dbutils), not locally
+testpaths = ["tests"]
+
 [tool.databricks.environment]
 environment_version = "5"
 
