@@ -57,6 +57,7 @@ start_raw, end_raw = dbutils.widgets.get("start_date"), dbutils.widgets.get("end
 if start_raw.strip():
     window_start = parse_ts(start_raw)
     window_end = parse_ts(end_raw) if end_raw.strip() else window_start + timedelta(days=1)
+    load_date = window_start.date().isoformat()   # backfill: the day being loaded
 else:
     watermark = read_watermark(spark, catalog, resource)
     if watermark is None:
@@ -65,13 +66,13 @@ else:
         watermark = watermark.replace(tzinfo=timezone.utc)
     window_start = watermark - timedelta(minutes=api_cfg.get("watermark_overlap_minutes", 0))
     window_end = parse_ts(end_raw) if end_raw.strip() else datetime.now(timezone.utc)
+    load_date = datetime.now(timezone.utc).date().isoformat()   # incremental: the day it ran
 
 if window_start >= window_end:
     raise ValueError(f"Empty window: {window_start} >= {window_end}")
 
-# Raw files are partitioned by the date of the window being loaded, so each daily backfill
-# run lands in its own load_date folder.
-load_date = window_start.date().isoformat()
+# Raw files are partitioned by load_date: the day loaded for a backfill (so each backfill day gets
+# its own folder), the run date for an incremental load (its window spans the previous run to now).
 print(f"run_id={run_id} resource={resource} format={fmt} window=[{window_start}, {window_end}) load_date={load_date}")
 
 # COMMAND ----------

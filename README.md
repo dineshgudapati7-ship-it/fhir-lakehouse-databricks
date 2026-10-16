@@ -29,10 +29,11 @@ flowchart LR
 | Raw | `/Volumes/fhir/raw/landing/{Resource}/{format}/load_date=…/run_id=…/page_NNNN.json` | API responses byte-for-byte |
 | Bronze | `fhir.bronze.{patient,encounter,observation,condition}` | one row per resource version returned, FHIR structure kept (structs/arrays), `_`-prefixed lineage |
 | Silver | `fhir.silver.*` | flattened, typed, cleaned, one version row per change (`effective_from/to`, `is_current`) |
-| Gold | `fhir.gold.*` | `dim_patient`, `dim_code`, `dim_date`, three facts, five reporting views |
+| Gold | `fhir.gold.*` | `dim_patient`, three facts, three reporting views (feeds the Power BI report) |
 | Ops | `fhir.ops.*` | audit and control tables |
 
 Table-level detail: [docs/data_model.md](docs/data_model.md). Operating the pipeline: [docs/runbook.md](docs/runbook.md).
+Report: [docs/powerbi.md](docs/powerbi.md) (Power BI on the Gold layer).
 
 ## Repository layout
 
@@ -139,17 +140,17 @@ That's a property of the source, not of the pipeline. Changes appear when record
 they change: daily incremental runs, or overlapping windows. `notebooks/tests/test_scd2` proves the
 merge with synthetic insert / change / no-change / late-arrival batches.
 
-**Gold uses the history.** Facts join to the patient version valid at the event time. If the event
-predates every version held (a 2020 lab result for a patient last updated in 2026), they fall back
-to the current version. If the patient was never loaded, they go to the Unknown member
-(`patient_sk = -1`). `patient_match` records which case applied. Unknown members keep facts instead
-of dropping them. The alternative, fetching child resources only for loaded patients
-(`?subject=Patient/…`), gives tighter integrity but far more API calls.
+**Gold is kept simple.** Gold is a small star schema over the current Silver rows:
+`dim_patient` plus encounter, observation and condition facts, joined on `patient_id`. Three views
+feed the report. The full change history stays queryable in Silver. Facts can reference a patient
+that was never loaded, because each resource is pulled by its own time window. These facts are kept,
+and their share is tracked as a data-quality warning. The alternative, fetching child resources only
+for loaded patients (`?subject=Patient/…`), gives tighter integrity but needs far more API calls.
 
 **Data quality has two severities.** Correctness checks are `error`: a FAIL fails the run and holds
 the watermark. They cover duplicate current versions, broken validity windows, Silver keys missing
 from Bronze, API-vs-Bronze counts, and Gold-vs-Silver counts. Completeness checks are `warn`: null
-rates and the unknown-patient rate. The public server holds a lot of incomplete test data, and that
+rates and the share of facts whose patient wasn't loaded. The public server holds a lot of incomplete test data, and that
 shouldn't stop the pipeline. Thresholds live in `conf/pipeline_config.yaml`.
 
 **PySpark instead of Dataflow Gen2.** Dataflow Gen2 is a Microsoft Fabric tool. On Databricks the

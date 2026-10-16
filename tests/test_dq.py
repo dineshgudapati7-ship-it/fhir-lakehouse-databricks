@@ -24,7 +24,7 @@ def test_every_resource_has_structural_checks_and_facts_have_gold_checks():
         assert {"duplicate_current_versions", "invalid_validity_window", "silver_keys_missing_in_bronze"} <= names
     for fact in dq.FACT_TABLES.values():
         names = {c["check_name"] for c in CHECKS if c["table_name"] == f"fhir.gold.{fact}"}
-        assert names == {"gold_vs_silver_row_diff", "unknown_patient_rate"}
+        assert names == {"gold_vs_silver_row_diff", "orphan_patient_rate"}
 
 
 def test_null_rate_checks_come_from_config_and_only_warn():

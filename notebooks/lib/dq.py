@@ -60,11 +60,12 @@ def dq_checks(catalog, run_id, keys, dq_cfg):
                 "gold_vs_silver_row_diff", gold_fact,
                 f"SELECT abs((SELECT count(*) FROM {gold_fact}) - "
                 f"(SELECT count(*) FROM {silver} WHERE is_current))",
-                0, "error", "fact rows vs current Silver rows (patient join must not drop or duplicate)"))
+                0, "error", "fact rows vs current Silver rows (joins must not drop or duplicate rows)"))
             checks.append(_check(
-                "unknown_patient_rate", gold_fact,
-                f"SELECT coalesce(avg(CASE WHEN patient_sk = -1 THEN 1.0 ELSE 0.0 END), 0) FROM {gold_fact}",
-                dq_cfg.get("max_unknown_patient_rate", 0.1), "warn",
+                "orphan_patient_rate", gold_fact,
+                f"SELECT coalesce(avg(CASE WHEN p.patient_id IS NULL THEN 1.0 ELSE 0.0 END), 0) "
+                f"FROM {gold_fact} f LEFT JOIN {catalog}.gold.dim_patient p ON p.patient_id = f.patient_id",
+                dq_cfg.get("max_orphan_patient_rate", 0.1), "warn",
                 "share of facts referencing a patient that was never loaded"))
     return checks
 

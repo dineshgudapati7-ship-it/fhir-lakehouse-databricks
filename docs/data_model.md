@@ -60,86 +60,59 @@ ORDER BY patient_id, effective_from;
 
 ## Gold — `fhir.gold.*`
 
+Rebuilt in full from the current Silver rows on every run. Facts join to `dim_patient` on `patient_id`.
+
 ```mermaid
 erDiagram
-    dim_patient ||--o{ fact_encounter : patient_sk
-    dim_patient ||--o{ fact_observation : patient_sk
-    dim_patient ||--o{ fact_condition : patient_sk
-    dim_date ||--o{ fact_encounter : date_key
-    dim_date ||--o{ fact_observation : date_key
-    dim_date ||--o{ fact_condition : onset_date_key
-    dim_code ||--o{ fact_observation : code_sk
-    dim_code ||--o{ fact_condition : code_sk
+    dim_patient ||--o{ fact_encounter : patient_id
+    dim_patient ||--o{ fact_observation : patient_id
+    dim_patient ||--o{ fact_condition : patient_id
 
     dim_patient {
-        bigint patient_sk PK
-        string patient_id
+        string patient_id PK
         string gender
         date birth_date
         int age
         string age_band
-        timestamp effective_from
-        timestamp effective_to
-        boolean is_current
-    }
-    dim_code {
-        bigint code_sk PK
-        string code_system
-        string code
-        string display
-    }
-    dim_date {
-        int date_key PK
-        date date
-        int year
-        int month
-        string day_name
+        string city
     }
     fact_encounter {
-        string encounter_id
-        bigint patient_sk FK
-        int date_key FK
-        string status
+        string encounter_id PK
+        string patient_id FK
+        date encounter_date
         string class_code
         double duration_hours
     }
     fact_observation {
-        string observation_id
-        bigint patient_sk FK
-        bigint code_sk FK
-        int date_key FK
+        string observation_id PK
+        string patient_id FK
+        date observation_date
+        string code
+        string code_display
         double value_quantity
-        string value_unit
-        double bp_systolic
-        double bp_diastolic
     }
     fact_condition {
-        string condition_id
-        bigint patient_sk FK
-        bigint code_sk FK
-        int onset_date_key FK
+        string condition_id PK
+        string patient_id FK
+        date onset_date
+        string code
+        string code_display
         string clinical_status
     }
 ```
 
 | Object | Grain | Notes |
 |---|---|---|
-| `dim_patient` | patient version | every SCD2 version; `patient_sk = xxhash64(patient_id, effective_from)`; Unknown member `-1` |
-| `dim_code` | code system + code | most-used display per code (sources spell displays differently); Unknown `-1` |
-| `dim_date` | calendar day | covers every event date up to today |
-| `fact_encounter` | current encounter | `duration_hours`, `patient_match` |
-| `fact_observation` | current observation | values, units, blood pressure components, `patient_match` |
-| `fact_condition` | current condition | onset and recorded date keys, `patient_match` |
-| `vw_patient_360` | current patient | encounter / observation / condition counts, active conditions, last activity |
-| `vw_daily_clinical_activity` | day | encounters, observations, condition onsets by event date |
+| `dim_patient` | current patient | `gender` (NULL → `unknown`), `age`, `age_band` (`Unknown` without a birth date) with sort key `age_band_order`, location, active / deceased flags |
+| `fact_encounter` | current encounter | `encounter_date`, period, `duration_hours`, status, class, type |
+| `fact_observation` | current observation | `observation_date`, category, code + display, value / unit, blood pressure components |
+| `fact_condition` | current condition | onset / recorded date, code + display, clinical and verification status |
+| `vw_daily_clinical_activity` | day | encounters, observations and conditions per day (condition date = recorded, else onset) |
 | `vw_top_conditions` | condition code | occurrences, distinct patients, active occurrences |
-| `vw_patient_vitals` | patient | latest heart rate, weight, height, BMI, HbA1c, glucose, systolic / diastolic BP |
 | `vw_pipeline_health` | run × resource | API calls, failures, truncations, records fetched, new / changed / unchanged |
 
-`patient_match` on facts is `point_in_time` (patient version valid at event time), `current` (event
-predates the versions held) or `unknown` (patient never loaded).
-
-Facts use liquid clustering on `patient_sk` and the date key.
+`code_display` is the most-used display for each code, because sources spell the same code
+differently (e.g. three spellings of the blood pressure panel `85354-9`).
 
 ## Ops — `fhir.ops.*`
 
