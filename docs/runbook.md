@@ -4,7 +4,7 @@
 
 ```bash
 databricks bundle validate
-databricks bundle deploy          # target dev (default)
+databricks bundle deploy          # target dev (default environment)
 ```
 
 ## Initial backfill
